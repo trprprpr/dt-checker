@@ -32,38 +32,48 @@ def read_excel(f):
     df = pd.read_excel(f)
     return df.to_string(index=False)
 
+def render_discrepancy(d):
+    sev = d.get("severity", "info")
+    colors = {"critical": "#ffebee", "major": "#fff8e1", "info": "#e3f2fd"}
+    borders = {"critical": "#c62828", "major": "#f9a825", "info": "#1565c0"}
+    labels = {"critical": "🔴 Критичное", "major": "🟡 Существенное", "info": "🔵 Информационное"}
+    bg = colors.get(sev, "#f5f5f5")
+    br = borders.get(sev, "#999")
+    lb = labels.get(sev, "")
+    field = d.get("field", "")
+    dt_val = d.get("dt_value", "—")
+    src_val = d.get("source_value", "—")
+    src_doc = d.get("source_doc", "")
+    comment = d.get("comment", "")
+    html = (
+        '<div style="background:' + bg + ';border-radius:8px;padding:1rem;'
+        'margin-bottom:0.75rem;border-left:4px solid ' + br + '">'
+        '<b>' + field + '</b> &nbsp; '
+        '<span style="font-size:0.8rem;opacity:0.7">' + lb + '</span><br><br>'
+        '<span style="color:#555">В ДТ:</span> '
+        '<b style="color:#c62828">' + dt_val + '</b><br>'
+        '<span style="color:#555">Должно быть (' + src_doc + '):</span> '
+        '<b style="color:#2e7d32">' + src_val + '</b><br>'
+        '<span style="color:#777;font-size:0.9rem">' + comment + '</span>'
+        '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
 SYSTEM = """Ты — эксперт по таможенному оформлению импортных поставок в Россию.
 Тебе дают тексты четырёх документов одной поставки: ДТ, Инвойс, Упаковочный лист, EXPORT.
 Сверь данные в ДТ с остальными документами и найди расхождения.
 
-Верни ТОЛЬКО валидный JSON без пояснений и без markdown:
+Верни ТОЛЬКО валидный JSON без пояснений и без markdown-блоков:
 
 {
   "invoice_number": "...",
   "dt_number": "...",
-  "summary": {
-    "total_checks": 0,
-    "discrepancies_found": 0,
-    "status": "ok"
-  },
+  "summary": {"total_checks": 0, "discrepancies_found": 0, "status": "ok"},
   "discrepancies": [
-    {
-      "field": "...",
-      "dt_value": "...",
-      "source_value": "...",
-      "source_doc": "...",
-      "severity": "critical",
-      "comment": "..."
-    }
+    {"field": "...", "dt_value": "...", "source_value": "...", "source_doc": "...", "severity": "critical", "comment": "..."}
   ],
   "checks": [
-    {
-      "field": "...",
-      "dt_value": "...",
-      "source_value": "...",
-      "source_doc": "...",
-      "status": "ok"
-    }
+    {"field": "...", "dt_value": "...", "source_value": "...", "source_doc": "...", "status": "ok"}
   ]
 }
 
@@ -81,7 +91,7 @@ all_ok = all([dt_file, inv_file, pl_file, exp_file])
 
 if not all_ok:
     missing = [n for f, n in [(dt_file,"ДТ"),(inv_file,"Инвойс"),(pl_file,"Упаковочный лист"),(exp_file,"EXPORT")] if not f]
-    st.info(f"Загрузи ещё: {', '.join(missing)}")
+    st.info("Загрузи ещё: " + ", ".join(missing))
 
 if st.button("🚀 Запустить проверку", disabled=not all_ok, type="primary", use_container_width=True):
     with st.spinner("Читаю документы..."):
@@ -92,16 +102,18 @@ if st.button("🚀 Запустить проверку", disabled=not all_ok, ty
 
     with st.spinner("Анализирую расхождения... (~30–40 сек)"):
         client = anthropic.Anthropic(api_key=api_key)
+        user_content = "=== ДТ ===\n" + dt_text + "\n\n=== ИНВОЙС ===\n" + inv_text + "\n\n=== УПАКОВОЧНЫЙ ЛИСТ ===\n" + pl_text + "\n\n=== EXPORT ===\n" + exp_text
         msg = client.messages.create(
             model="claude-opus-4-5",
             max_tokens=4096,
             system=SYSTEM,
-            messages=[{"role": "user", "content": f"""=== ДТ ===\n{dt_text}\n\n=== ИНВОЙС ===\n{inv_text}\n\n=== УПАКОВОЧНЫЙ ЛИСТ ===\n{pl_text}\n\n=== EXPORT ===\n{exp_text}"""}]
+            messages=[{"role": "user", "content": user_content}]
         )
 
     raw = msg.content[0].text.strip()
     if "```" in raw:
-        raw = raw.split("```")[1]
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else raw
         if raw.startswith("json"):
             raw = raw[4:]
     raw = raw.strip()
@@ -118,8 +130,8 @@ if st.button("🚀 Запустить проверку", disabled=not all_ok, ty
     n_total = summary.get("total_checks", 0)
 
     st.divider()
-    st.markdown(f"### Результат · Инвойс {result.get('invoice_number','—')}")
-    st.caption(f"ДТ: {result.get('dt_number','—')}")
+    st.markdown("### Результат · Инвойс " + str(result.get("invoice_number", "—")))
+    st.caption("ДТ: " + str(result.get("dt_number", "—")))
 
     c1, c2, c3 = st.columns(3)
     c1.metric("Расхождений", n_err)
@@ -131,10 +143,46 @@ if st.button("🚀 Запустить проверку", disabled=not all_ok, ty
         st.divider()
         st.markdown("### ⚠️ Найденные расхождения")
         order = {"critical": 0, "major": 1, "info": 2}
-        discrepancies.sort(key=lambda x: order.get(x.get("severity","info"), 2))
+        discrepancies.sort(key=lambda x: order.get(x.get("severity", "info"), 2))
         for d in discrepancies:
-            sev = d.get("severity","info")
-            color = {"critical":"#ffebee","major":"#fff8e1","info":"#e3f2fd"}.get(sev,"#f5f5f5")
-            border = {"critical":"#c62828","major":"#f9a825","info":"#1565c0"}.get(sev,"#999")
-            label = {"critical":"🔴 Критичное","major":"🟡 Существенное","info":"🔵 Информационное"}.get(sev,"")
-            st.markdown(f"""<div style="background:{color};border-radius:8px;padding:1rem;mar
+            render_discrepancy(d)
+    else:
+        st.success("✅ Расхождений не найдено.")
+
+    checks = result.get("checks", [])
+    if checks:
+        st.divider()
+        with st.expander("📋 Полная таблица проверок"):
+            rows = []
+            for c in checks:
+                rows.append({
+                    "Статус": "✅" if c.get("status") == "ok" else "❌",
+                    "Поле": c.get("field", ""),
+                    "В ДТ": c.get("dt_value", ""),
+                    "Источник": c.get("source_value", ""),
+                    "Документ": c.get("source_doc", "")
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        buf = io.BytesIO()
+        out_rows = []
+        for c in checks:
+            out_rows.append({
+                "Статус": "OK" if c.get("status") == "ok" else "ОШИБКА",
+                "Поле": c.get("field", ""),
+                "В ДТ": c.get("dt_value", ""),
+                "Эталон": c.get("source_value", ""),
+                "Источник": c.get("source_doc", "")
+            })
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            pd.DataFrame(out_rows).to_excel(w, index=False, sheet_name="Сверка")
+        buf.seek(0)
+        st.divider()
+        dt_num = result.get("dt_number", "report").replace("/", "_")
+        st.download_button(
+            "⬇️ Скачать отчёт Excel",
+            buf,
+            file_name="sverka_" + dt_num + ".xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
