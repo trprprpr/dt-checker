@@ -177,14 +177,18 @@ with tab2:
         def prepare_content(f, label):
             name = f.name.lower()
             if name.endswith(".pdf"):
+                f.seek(0)
                 text = read_pdf_text(f)
-                return [{"type":"text","text": label + ":\n" + text}]
+                if text.strip():
+                    return [{"type":"text","text": label + ":\n" + text}]
+                else:
+                    return [{"type":"text","text": label + ": (PDF не содержит текстового слоя, распознавание недоступно)"}]
             else:
                 mime = "image/png" if name.endswith(".png") else "image/jpeg"
                 f.seek(0)
                 b64 = file_to_b64(f)
                 return [
-                    {"type":"text","text": label + " (изображение — извлеки весь текст и сравни):"},
+                    {"type":"text","text": label + ":"},
                     {"type":"image","source":{"type":"base64","media_type":mime,"data":b64}}
                 ]
 
@@ -290,8 +294,12 @@ with tab3:
         def pack_to_vision(f):
             name = f.name.lower()
             if name.endswith(".pdf"):
+                f.seek(0)
                 text = read_pdf_text(f)
-                return [{"type":"text","text":"Макет (PDF, текстовый слой):\n" + text}]
+                if text.strip():
+                    return [{"type":"text","text":"Макет (PDF, текстовый слой):\n" + text}]
+                else:
+                    return [{"type":"text","text":"Макет (PDF): (PDF не содержит текстового слоя, распознавание недоступно)"}]
             else:
                 mime = "image/png" if name.endswith(".png") else "image/jpeg"
                 f.seek(0)
