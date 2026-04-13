@@ -19,13 +19,31 @@ client = anthropic.Anthropic(api_key=api_key)
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def read_pdf_text(f):
     r = PdfReader(f)
-    return "\n".join(p.extract_text() or "" for p in r.pages)
+    text = "\n".join(p.extract_text() or "" for p in r.pages)
+    # Remove null bytes and control characters that cause Anthropic API 400 errors
+    return ''.join(c for c in text if c >= ' ' or c in '\n\r\t')
 
 def read_excel(f):
     return pd.read_excel(f).to_string(index=False)
 
 def file_to_b64(f):
     return base64.standard_b64encode(f.read()).decode("utf-8")
+
+def image_to_b64(f):
+    """Return (base64_str, mime_type), resizing image if it exceeds 4 MB."""
+    f.seek(0)
+    raw = f.read()
+    name = f.name.lower()
+    mime = "image/png" if name.endswith(".png") else "image/jpeg"
+    MAX = 4 * 1024 * 1024
+    if len(raw) <= MAX:
+        return base64.standard_b64encode(raw).decode("utf-8"), mime
+    img = Image.open(io.BytesIO(raw))
+    scale = (MAX / len(raw)) ** 0.5
+    img = img.resize((max(1, int(img.width * scale)), max(1, int(img.height * scale))), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG" if name.endswith(".png") else "JPEG", quality=85)
+    return base64.standard_b64encode(buf.getvalue()).decode("utf-8"), mime
 
 def render_disc(d):
     sev = d.get("severity", "info")
@@ -184,9 +202,7 @@ with tab2:
                 else:
                     return [{"type":"text","text": label + ": (PDF не содержит текстового слоя, распознавание недоступно)"}]
             else:
-                mime = "image/png" if name.endswith(".png") else "image/jpeg"
-                f.seek(0)
-                b64 = file_to_b64(f)
+                b64, mime = image_to_b64(f)
                 return [
                     {"type":"text","text": label + ":"},
                     {"type":"image","source":{"type":"base64","media_type":mime,"data":b64}}
@@ -301,9 +317,7 @@ with tab3:
                 else:
                     return [{"type":"text","text":"Макет (PDF): (PDF не содержит текстового слоя, распознавание недоступно)"}]
             else:
-                mime = "image/png" if name.endswith(".png") else "image/jpeg"
-                f.seek(0)
-                b64 = file_to_b64(f)
+                b64, mime = image_to_b64(f)
                 return [{"type":"image","source":{"type":"base64","media_type":mime,"data":b64}}]
 
         with st.spinner("Сравниваю макеты... (~30–60 сек)"):
