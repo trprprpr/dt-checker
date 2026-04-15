@@ -17,6 +17,33 @@ if not api_key:
 client = anthropic.Anthropic(api_key=api_key)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def parse_json_response(raw):
+    """Parse JSON, recovering truncated responses by closing open structures."""
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    # Try to recover truncated JSON: find last complete object in checks/discrepancies
+    # Strategy: trim to last complete '}' at top level and close open arrays/objects
+    truncated = raw.rstrip()
+    # Remove trailing incomplete string/object
+    # Find the last complete '}' that closes a checks item
+    last_close = truncated.rfind('},')
+    if last_close == -1:
+        last_close = truncated.rfind('}')
+    if last_close > 0:
+        candidate = truncated[:last_close + 1]
+        # Count open brackets to close them
+        opens = candidate.count('[') - candidate.count(']')
+        braces = candidate.count('{') - candidate.count('}')
+        candidate += ']' * opens + '}' * braces
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+    return None
+
+
 def read_pdf_text(f):
     r = PdfReader(f)
     text = "\n".join(p.extract_text() or "" for p in r.pages)
@@ -112,7 +139,7 @@ Severity: critical=адрес/сумма/кол-во/код, major=вес/усл
 кол-во поддонов, производитель, регистрационное удостоверение."""
 
             content = "=== ДТ ===\n" + dt_text + "\n\n=== ИНВОЙС ===\n" + inv_text + "\n\n=== PL ===\n" + pl_text + "\n\n=== EXPORT ===\n" + exp_text
-            msg = client.messages.create(model="claude-sonnet-4-6", max_tokens=8192,
+            msg = client.messages.create(model="claude-sonnet-4-6", max_tokens=16384,
                 system=SYSTEM_DT, messages=[{"role":"user","content":content}])
 
         raw = msg.content[0].text.strip()
@@ -121,12 +148,13 @@ Severity: critical=адрес/сумма/кол-во/код, major=вес/усл
             if raw.startswith("json"): raw = raw[4:]
         raw = raw.strip()
 
-        try:
-            result = json.loads(raw)
-        except Exception:
+        result = parse_json_response(raw)
+        if result is None:
             st.error("Не удалось разобрать ответ. Попробуй ещё раз.")
             st.code(raw)
             st.stop()
+        if msg.stop_reason == "max_tokens":
+            st.warning("⚠️ Ответ был обрезан — показаны частичные результаты.")
 
         summary = result.get("summary", {})
         n_err   = summary.get("discrepancies_found", 0)
@@ -236,7 +264,7 @@ with tab2:
 Severity: critical=другое содержание/пропущен раздел, major=другая формулировка, info=пунктуация/регистр."""
 
             msg = client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=8192, system=SYSTEM_TEXT,
+                model="claude-sonnet-4-6", max_tokens=16384, system=SYSTEM_TEXT,
                 messages=[{"role":"user","content": source_content + target_content}])
 
         raw = msg.content[0].text.strip()
@@ -245,12 +273,13 @@ Severity: critical=другое содержание/пропущен разде
             if raw.startswith("json"): raw = raw[4:]
         raw = raw.strip()
 
-        try:
-            result = json.loads(raw)
-        except Exception:
+        result = parse_json_response(raw)
+        if result is None:
             st.error("Не удалось разобрать ответ. Попробуй ещё раз.")
             st.code(raw)
             st.stop()
+        if msg.stop_reason == "max_tokens":
+            st.warning("⚠️ Ответ был обрезан — показаны частичные результаты.")
 
         summary = result.get("summary", {})
         n_err   = summary.get("discrepancies_found", 0)
@@ -354,7 +383,7 @@ Severity: critical=название/дозировка/штрихкод/рег.�
             target_content = [{"type":"text","text":"TARGET (проверяемый):"}] + pack_to_vision(target_pack)
 
             msg = client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=8192, system=SYSTEM_PACK,
+                model="claude-sonnet-4-6", max_tokens=16384, system=SYSTEM_PACK,
                 messages=[{"role":"user","content": source_content + target_content}])
 
         raw = msg.content[0].text.strip()
@@ -363,12 +392,13 @@ Severity: critical=название/дозировка/штрихкод/рег.�
             if raw.startswith("json"): raw = raw[4:]
         raw = raw.strip()
 
-        try:
-            result = json.loads(raw)
-        except Exception:
+        result = parse_json_response(raw)
+        if result is None:
             st.error("Не удалось разобрать ответ. Попробуй ещё раз.")
             st.code(raw)
             st.stop()
+        if msg.stop_reason == "max_tokens":
+            st.warning("⚠️ Ответ был обрезан — показаны частичные результаты.")
 
         summary = result.get("summary", {})
         n_err   = summary.get("discrepancies_found", 0)
