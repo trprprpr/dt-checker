@@ -337,9 +337,17 @@ with tab3:
                  type="primary", use_container_width=True, key="btn_pack"):
 
         def pack_to_vision(f):
-            f.seek(0)
-            text = read_pdf_text(f)
-            return [{"type":"text","text":"Макет:\n" + text}]
+            name = f.name.lower()
+            if name.endswith(".pdf"):
+                f.seek(0)
+                text = read_pdf_text(f)
+                if text.strip():
+                    return [{"type":"text","text":"Макет (PDF, текстовый слой):\n" + text}]
+                else:
+                    return [{"type":"text","text":"Макет (PDF): (PDF не содержит текстового слоя, распознавание недоступно)"}]
+            else:
+                b64, mime = image_to_b64(f)
+                return [{"type":"image","source":{"type":"base64","media_type":mime,"data":b64}}]
 
         with st.spinner("Сравниваю макеты... (~30–60 сек)"):
             SYSTEM_PACK = """Ты — эксперт по контролю качества фармацевтической упаковки.
