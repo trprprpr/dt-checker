@@ -336,18 +336,28 @@ with tab3:
     if st.button("🎨 Сравнить макеты", disabled=not(source_pack and target_pack),
                  type="primary", use_container_width=True, key="btn_pack"):
 
-        def pack_to_vision(f):
+        def pack_to_vision(f, label=""):
             name = f.name.lower()
+            f.seek(0)
             if name.endswith(".pdf"):
-                f.seek(0)
                 text = read_pdf_text(f)
+                content = []
+                if label:
+                    content.append({"type":"text","text": label + ":"})
                 if text.strip():
-                    return [{"type":"text","text":"Макет (PDF, текстовый слой):\n" + text}]
+                    content.append({"type":"text","text": text})
                 else:
-                    return [{"type":"text","text":"Макет (PDF): (PDF не содержит текстового слоя, распознавание недоступно)"}]
+                    content.append({"type":"text","text": "(PDF не содержит текстового слоя)"})
+                return content
             else:
-                b64, mime = image_to_b64(f)
-                return [{"type":"image","source":{"type":"base64","media_type":mime,"data":b64}}]
+                mime = "image/png" if name.endswith(".png") else "image/jpeg"
+                f.seek(0)
+                b64 = file_to_b64(f)
+                content = []
+                if label:
+                    content.append({"type":"text","text": label + ":"})
+                content.append({"type":"image","source":{"type":"base64","media_type":mime,"data":b64}})
+                return content
 
         with st.spinner("Сравниваю макеты... (~30–60 сек)"):
             SYSTEM_PACK = """Ты — эксперт по контролю качества фармацевтической упаковки.
